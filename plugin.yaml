@@ -1,0 +1,4 @@
+id: com.mattermost.xkcd
+name: XKCD
+server:
+    executable: plugin.exe
