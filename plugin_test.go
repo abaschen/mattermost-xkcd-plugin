@@ -46,20 +46,30 @@ func TestPlugin(t *testing.T) {
 		ExpectedComicNum int
 		ExpectedComic    bool
 	}{
-		"NoConfiguration": {
+		"ValidConfiguration": {
 			Configuration:    validConfiguration,
-			Message:          "sdfsdf https://xkcd.com/2057/ sdfsdf",
+			Message:          "foo https://xkcd.com/2057/ bar",
 			ExpectedComicNum: 2057,
 			ExpectedComic:    true,
 		},
 		"BadUrl": {
 			Configuration: validConfiguration,
-			Message:       "sdfsdf https://xdkcd.com/2057/ sdfsdf",
+			Message:       "foo https://xdkcd.com/2057/ bar",
 			ExpectedComic: false,
 		},
 		"GoodUrlStrictSkip": {
 			Configuration: validConfigurationStrict,
-			Message:       "sdfsdf https://xkcd.com/2057/ sdfsdf",
+			Message:       "foo https://xkcd.com/2057/ bar",
+			ExpectedComic: false,
+		},
+		"GoodUrlStrictSkipTail": {
+			Configuration: validConfigurationStrict,
+			Message:       "https://xkcd.com/2057/ foooooo",
+			ExpectedComic: false,
+		},
+		"GoodUrlStrictSkipHead": {
+			Configuration: validConfigurationStrict,
+			Message:       "Some head https://xkcd.com/2057/",
 			ExpectedComic: false,
 		},
 		"GoodUrlStrict": {
