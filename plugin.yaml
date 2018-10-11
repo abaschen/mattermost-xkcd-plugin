@@ -1,4 +1,17 @@
 id: com.mattermost.xkcd
 name: XKCD
+description: Inject XKCD comics when an URL is detected
+version: 'v1.0'
 server:
     executable: plugin.exe
+settings_schema:
+    settings:
+        - key: Debug
+          display_name: Enable debug logs for XKCD
+          type: bool
+          default: false
+        - key: StrictTrigger
+          display_name: Strict trigger
+          help_text: If activated, plugin will only trigger if the message from the user only contains the XKCD url.
+          type: bool
+          default: false

@@ -29,6 +29,9 @@ type XKCD struct {
 }
 type XKCDPlugin struct {
 	plugin.MattermostPlugin
+
+	Debug         bool
+	StrictTrigger bool
 }
 
 /**
@@ -42,19 +45,35 @@ Note that this method will be called for posts created by plugins, including the
 */
 func (o *XKCDPlugin) MessageWillBePosted(c *plugin.Context, post *model.Post) (*model.Post, string) {
 	message := post.Message
-	re := regexp.MustCompile("(http(s?):\\/\\/)?xkcd\\.com\\/(\\d+)(\\/?)")
+	debug := o.Debug
+	if debug {
+		fmt.Println("Message received - processing")
+	}
+	var re *regexp.Regexp
+	if o.StrictTrigger {
+		re = regexp.MustCompile("^(http(s?):\\/\\/)?xkcd\\.com\\/(\\d+)(\\/?)$")
+	} else {
+		re = regexp.MustCompile("(http(s?):\\/\\/)?xkcd\\.com\\/(\\d+)(\\/?)")
+	}
 	url := re.FindString(message)
 
 	if url == "" {
+		if debug {
+			fmt.Println("No URL found - skipping")
+		}
 		return nil, ""
 	}
 	num := re.FindStringSubmatch(url)[3]
-
+	if debug {
+		fmt.Println("URL found - Fetching info for comic " + num)
+	}
 	url = "https://xkcd.com/" + num + "/info.0.json"
 	resp, err := http.Get(url)
 
 	if err != nil {
-		fmt.Println("ERROR: Failed to get JSON info \"" + url + "\" " + err.Error())
+		if debug {
+			fmt.Println("ERROR: Failed to get JSON info \"" + url + "\" " + err.Error())
+		}
 		return nil, ""
 	}
 	xkcd := XKCD{}
@@ -63,12 +82,20 @@ func (o *XKCDPlugin) MessageWillBePosted(c *plugin.Context, post *model.Post) (*
 	defer b.Close() // close Body when the function returns
 	buf := new(bytes.Buffer)
 	buf.ReadFrom(b)
-	fmt.Println("Received JSON info \"" + buf.String() + "\"")
+	if debug {
+		fmt.Println("Received JSON info \"" + buf.String() + "\"")
+	}
 	err = json.Unmarshal(buf.Bytes(), &xkcd)
-	fmt.Println("XKCD comic extracted  \"" + num + "\": \"" + xkcd.Img + "\"")
+
 	if err != nil {
 		// passthrough
+		if debug {
+			fmt.Println("Error unmarshalling JSON")
+		}
 		return nil, ""
+	}
+	if debug {
+		fmt.Println("XKCD comic extracted  \"" + num + "\": \"" + xkcd.Img + "\"")
 	}
 	gob.Register(model.SlackAttachment{})
 
@@ -93,7 +120,9 @@ func (o *XKCDPlugin) MessageWillBePosted(c *plugin.Context, post *model.Post) (*
 	nonNilAttachments = append(nonNilAttachments, &attachment)
 
 	post.AddProp("attachments", nonNilAttachments)
-
+	if debug {
+		fmt.Println("Post modified with the attachment :)")
+	}
 	return post, ""
 }
 
