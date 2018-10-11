@@ -39,12 +39,10 @@ If you don't need to modify or reject posts, use MessageHasBeenPosted instead.
 Note that this method will be called for posts created by plugins, including the plugin that created the post.
 */
 func (o *XKCDPlugin) MessageWillBePosted(c *plugin.Context, post *model.Post) (*model.Post, string) {
-	if post.Props["xkcd"] != nil {
-		return nil, ""
-	}
+
 	re := regexp.MustCompile("^(http(s?):\\/\\/)?xkcd\\.com\\/(\\d+)(\\/?)$")
 	url := re.FindString(post.Message)
-	if post.Attachments() == nil && url == "" {
+	if post.Attachments() != nil || url == "" {
 		return nil, ""
 	}
 
