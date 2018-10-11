@@ -1,32 +1,34 @@
 package main
 
 import (
+	"bytes"
+	"encoding/gob"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"regexp"
-	"strings"
 
 	"github.com/mattermost/mattermost-server/model"
 	"github.com/mattermost/mattermost-server/plugin"
-	"golang.org/x/net/html"
 )
 
+type XKCD struct {
+	Day   string `json:"day"`
+	Month string `json:"month"`
+	Year  string `json:"year"`
+
+	Num       int    `json:"num"`
+	Link      string `json:"link"`
+	SafeTitle string `json:"safe_title"`
+	Img       string `json:"img"`
+
+	News       string `json:"transcript "`
+	Transcript string `json:"transcript"`
+	Alt        string `json:"alt"`
+	Title      string `json:"title"`
+}
 type XKCDPlugin struct {
 	plugin.MattermostPlugin
-}
-
-func getHtml(url string) (*html.Node, error) {
-	resp, err := http.Get(url)
-
-	if err != nil {
-		fmt.Println("ERROR: Failed to crawl \"" + url + "\"")
-		return nil, err
-	}
-
-	b := resp.Body
-	defer b.Close() // close Body when the function returns
-
-	return html.Parse(b)
 }
 
 /**
@@ -39,92 +41,60 @@ If you don't need to modify or reject posts, use MessageHasBeenPosted instead.
 Note that this method will be called for posts created by plugins, including the plugin that created the post.
 */
 func (o *XKCDPlugin) MessageWillBePosted(c *plugin.Context, post *model.Post) (*model.Post, string) {
+	message := post.Message
+	re := regexp.MustCompile("(http(s?):\\/\\/)?xkcd\\.com\\/(\\d+)(\\/?)")
+	url := re.FindString(message)
 
-	re := regexp.MustCompile("^(http(s?):\\/\\/)?xkcd\\.com\\/(\\d+)(\\/?)$")
-	url := re.FindString(post.Message)
-	if post.Attachments() != nil || url == "" {
+	if url == "" {
 		return nil, ""
 	}
+	num := re.FindStringSubmatch(url)[3]
 
-	doc, err := getHtml(url)
+	url = "https://xkcd.com/" + num + "/info.0.json"
+	resp, err := http.Get(url)
 
+	if err != nil {
+		fmt.Println("ERROR: Failed to get JSON info \"" + url + "\" " + err.Error())
+		return nil, ""
+	}
+	xkcd := XKCD{}
+
+	b := resp.Body
+	defer b.Close() // close Body when the function returns
+	buf := new(bytes.Buffer)
+	buf.ReadFrom(b)
+	fmt.Println("Received JSON info \"" + buf.String() + "\"")
+	err = json.Unmarshal(buf.Bytes(), &xkcd)
+	fmt.Println("XKCD comic extracted  \"" + num + "\": \"" + xkcd.Img + "\"")
 	if err != nil {
 		// passthrough
 		return nil, ""
 	}
-	comic := getElementById(doc, "comic")
-	for c := comic.FirstChild; c != nil; c = c.NextSibling {
-		if c.Data == "img" {
-			ok, src, title := getImg(c)
-			if ok {
-				post.Message = "[![](" + src + " \"" + title + "\")](" + url + ")"
-				post.AddProp("xkcd", true)
-				return post, ""
-			} else {
-				return nil, ""
-			}
+	gob.Register(model.SlackAttachment{})
+
+	//post.Message = "[![](" + src + " \"" + title + "\")](" + url + ")"
+	post.AddProp("xkcd", true)
+	attachments := post.Attachments()
+	var nonNilAttachments []*model.SlackAttachment
+	attachment := model.SlackAttachment{
+		Title: "XKCD Comic - " + xkcd.SafeTitle,
+
+		TitleLink: "https://xkcd.com/" + num + "/",
+		ImageURL:  xkcd.Img,
+		Text:      xkcd.Alt,
+	}
+	//attachments = append(nonNilAttachments, *attachments)
+	for _, a := range attachments {
+		if a == nil {
+			continue
 		}
+		nonNilAttachments = append(nonNilAttachments, a)
 	}
-	return nil, ""
-}
+	nonNilAttachments = append(nonNilAttachments, &attachment)
 
-////////// GET ELEMENT BY ID helper
-func GetId(n *html.Node) (string, bool) {
-	for _, attr := range n.Attr {
-		if attr.Key == "id" {
-			return attr.Val, true
-		}
-	}
-	return "", false
-}
+	post.AddProp("attachments", nonNilAttachments)
 
-func checkId(n *html.Node, id string) bool {
-	if n.Type == html.ElementNode {
-		s, ok := GetId(n)
-		if ok && s == id {
-			return true
-		}
-	}
-	return false
-}
-
-func traverse(n *html.Node, id string) *html.Node {
-	if checkId(n, id) {
-		return n
-	}
-
-	for c := n.FirstChild; c != nil; c = c.NextSibling {
-		result := traverse(c, id)
-		if result != nil {
-			return result
-		}
-	}
-
-	return nil
-}
-
-func getElementById(n *html.Node, id string) *html.Node {
-	return traverse(n, id)
-}
-
-////////////////// end
-
-// Helper function to pull the href attribute from a Token
-func getImg(n *html.Node) (ok bool, src string, title string) {
-	title = "From xkcd.com"
-	// Iterate over all of the Token's attributes until we find an "href"
-	for _, a := range n.Attr {
-		if a.Key == "src" {
-			src = a.Val
-			ok = true
-		} else if a.Key == "title" {
-			title = strings.Replace(a.Val, "\"", "\\\"", -1)
-		}
-	}
-
-	// "bare" return will return the variables (ok, href) as defined in
-	// the function definition
-	return ok, src, title
+	return post, ""
 }
 
 func main() {
