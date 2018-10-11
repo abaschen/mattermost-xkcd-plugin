@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"strconv"
 
 	"github.com/mattermost/mattermost-server/model"
 	"github.com/mattermost/mattermost-server/plugin"
@@ -32,6 +33,8 @@ type XKCDPlugin struct {
 
 	Debug         bool
 	StrictTrigger bool
+
+	Client *http.Client
 }
 
 /**
@@ -45,6 +48,43 @@ Note that this method will be called for posts created by plugins, including the
 */
 func (o *XKCDPlugin) MessageWillBePosted(c *plugin.Context, post *model.Post) (*model.Post, string) {
 	message := post.Message
+
+	if o.Client == nil {
+		o.Client = http.DefaultClient
+	}
+	xkcd := UpdatePost(message, o)
+	if xkcd == nil {
+		return nil, ""
+	}
+	gob.Register(model.SlackAttachment{})
+	//post.Message = "[![](" + src + " \"" + title + "\")](" + url + ")"
+	post.AddProp("xkcd", true)
+	attachments := post.Attachments()
+	var nonNilAttachments []*model.SlackAttachment
+	attachment := model.SlackAttachment{
+		Title: "XKCD Comic - " + xkcd.SafeTitle,
+
+		TitleLink: "https://xkcd.com/" + strconv.Itoa(xkcd.Num) + "/",
+		ImageURL:  xkcd.Img,
+		Text:      xkcd.Alt,
+	}
+	//attachments = append(nonNilAttachments, *attachments)
+	for _, a := range attachments {
+		if a == nil {
+			continue
+		}
+		nonNilAttachments = append(nonNilAttachments, a)
+	}
+	nonNilAttachments = append(nonNilAttachments, &attachment)
+
+	post.AddProp("attachments", nonNilAttachments)
+	if o.Debug {
+		fmt.Println("Post modified with the attachment :)")
+	}
+	return post, ""
+}
+
+func UpdatePost(message string, o *XKCDPlugin) *XKCD {
 	debug := o.Debug
 	if debug {
 		fmt.Println("Message received - processing")
@@ -61,20 +101,20 @@ func (o *XKCDPlugin) MessageWillBePosted(c *plugin.Context, post *model.Post) (*
 		if debug {
 			fmt.Println("No URL found - skipping")
 		}
-		return nil, ""
+		return nil
 	}
 	num := re.FindStringSubmatch(url)[3]
 	if debug {
 		fmt.Println("URL found - Fetching info for comic " + num)
 	}
 	url = "https://xkcd.com/" + num + "/info.0.json"
-	resp, err := http.Get(url)
+	resp, err := o.Client.Get(url)
 
 	if err != nil {
 		if debug {
 			fmt.Println("ERROR: Failed to get JSON info \"" + url + "\" " + err.Error())
 		}
-		return nil, ""
+		return nil
 	}
 	xkcd := XKCD{}
 
@@ -92,38 +132,13 @@ func (o *XKCDPlugin) MessageWillBePosted(c *plugin.Context, post *model.Post) (*
 		if debug {
 			fmt.Println("Error unmarshalling JSON")
 		}
-		return nil, ""
+		return nil
 	}
 	if debug {
 		fmt.Println("XKCD comic extracted  \"" + num + "\": \"" + xkcd.Img + "\"")
 	}
-	gob.Register(model.SlackAttachment{})
 
-	//post.Message = "[![](" + src + " \"" + title + "\")](" + url + ")"
-	post.AddProp("xkcd", true)
-	attachments := post.Attachments()
-	var nonNilAttachments []*model.SlackAttachment
-	attachment := model.SlackAttachment{
-		Title: "XKCD Comic - " + xkcd.SafeTitle,
-
-		TitleLink: "https://xkcd.com/" + num + "/",
-		ImageURL:  xkcd.Img,
-		Text:      xkcd.Alt,
-	}
-	//attachments = append(nonNilAttachments, *attachments)
-	for _, a := range attachments {
-		if a == nil {
-			continue
-		}
-		nonNilAttachments = append(nonNilAttachments, a)
-	}
-	nonNilAttachments = append(nonNilAttachments, &attachment)
-
-	post.AddProp("attachments", nonNilAttachments)
-	if debug {
-		fmt.Println("Post modified with the attachment :)")
-	}
-	return post, ""
+	return &xkcd
 }
 
 func main() {
