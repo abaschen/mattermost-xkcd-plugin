@@ -41,21 +41,12 @@ type XKCDPlugin struct {
 	configuration *configuration
 }
 
-// configuration captures the plugin's external configuration as exposed in the Mattermost server
-// configuration, as well as values computed from the configuration. Any public fields will be
-// deserialized from the Mattermost server configuration in OnConfigurationChange.
-//
-// As plugins are inherently concurrent (hooks being called asynchronously), and the plugin
-// configuration can change at any time, access to the configuration must be synchronized. The
-// strategy used in this plugin is to guard a pointer to the configuration, and clone the entire
-// struct whenever it changes. You may replace this with whatever strategy you choose.
 type configuration struct {
 	Debug         bool
 	StrictTrigger bool
 }
 
-// Clone deep copies the configuration. Your implementation may only require a shallow copy if
-// your configuration has no reference types.
+// Clone deep copies the configuration
 func (c *configuration) Clone() *configuration {
 	return &configuration{
 		Debug:         c.Debug,
@@ -78,14 +69,6 @@ func (p *XKCDPlugin) getConfiguration() *configuration {
 }
 
 // setConfiguration replaces the active configuration under lock.
-//
-// Do not call setConfiguration while holding the configurationLock, as sync.Mutex is not
-// reentrant. In particular, avoid using the plugin API entirely, as this may in turn trigger a
-// hook back into the plugin. If that hook attempts to acquire this lock, a deadlock may occur.
-//
-// This method panics if setConfiguration is called with the existing configuration. This almost
-// certainly means that the configuration was modified without being cloned and may result in
-// an unsafe access.
 func (p *XKCDPlugin) setConfiguration(configuration *configuration) {
 	p.configurationLock.Lock()
 	defer p.configurationLock.Unlock()
@@ -98,9 +81,6 @@ func (p *XKCDPlugin) setConfiguration(configuration *configuration) {
 }
 
 // OnConfigurationChange is invoked when configuration changes may have been made.
-//
-// This demo implementation ensures the configured demo user and channel are created for use
-// by the plugin.
 func (p *XKCDPlugin) OnConfigurationChange() error {
 	var configuration = new(configuration)
 
