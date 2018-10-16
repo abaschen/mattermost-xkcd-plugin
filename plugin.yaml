@@ -1,7 +1,7 @@
 id: com.mattermost.xkcd
 name: XKCD
 description: Inject XKCD comics when an URL is detected
-version: 'v1.0'
+version: 'v1.2'
 server:
     executable: plugin.exe
 settings_schema:
